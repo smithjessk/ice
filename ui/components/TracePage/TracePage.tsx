@@ -223,7 +223,17 @@ const TreeProvider = ({ traceId, children }: { traceId: string; children: ReactN
     poll();
 
     return () => {
-      isMounted.current = false;
+      // TODO do this with an effect that aborts the request if the page is navigated away from
+      // fetch API, signal; abort controller (https://developers.google.com/web/updates/2017/09/abortable-fetch)
+      // should also make this into a streaming response
+      // three things:
+      // 1. change the server to use streaming, looking for a terminator(there's already a terminator inside the block files, just not in the trace jsonl files)
+      // 2. fetch abort controller in the frontend (takes in a line of jsonL)
+      // (you need to have capabilities on the frontend to abort the fetch because the tcp connection could still be open)
+      // check out https://github.com/oughtinc/ice/pull/150
+      // 3. use part 2 inside a useEffect that returns a cleanup function that aborts the fetch (setState or reference)
+
+      isMounted.current = false; // TODO this gets hit when doing a hot reload, which is a bit annoying (stops the streaming from working)
       clearTimeout(timeoutId);
     };
   }, [traceId]);
