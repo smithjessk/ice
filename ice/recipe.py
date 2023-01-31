@@ -36,6 +36,7 @@ from ice.paper import Paper
 from ice.trace import enable_trace
 from ice.trace import trace
 from ice.trace import TracedABC
+from ice.trace import write_end_of_trace
 from ice.utils import map_async
 
 RecipeSettings = TypeVar("RecipeSettings", bound=BaseSettings)
@@ -147,6 +148,8 @@ class RecipeHelper:
         async def hidden_wrapper(*args, **kwargs):
             try:
                 result = await traced_main(*args, **kwargs)
+                # TODO why did writing the terminator here cause stuff to be written after the fact- can we just stop reading at that point? (if so we should say flush instead of close)
+                # write_end_of_trace()
             except NameError:
                 print_exc()
                 print(
@@ -174,6 +177,8 @@ class RecipeHelper:
             if trace:
                 enable_trace()
             asyncio.run(untraced_wrapper(*args, **kwargs))
+            if trace:
+                write_end_of_trace()
 
         defopt.run(
             cli,

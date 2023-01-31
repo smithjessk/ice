@@ -249,8 +249,6 @@ const TreeProvider = ({ traceId, children }: { traceId: string; children: ReactN
       }
     };
 
-    // TODO remove this but the nice trace id for debugging is http://localhost:8935/traces/01GR4S5160AW5BDK9F04202GXW :)
-
     makeStream();
     return () => {
       // TODO check out https://github.com/oughtinc/ice/pull/150

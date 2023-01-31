@@ -10,6 +10,7 @@ from starlette.responses import FileResponse
 from starlette.responses import PlainTextResponse
 from starlette.responses import StreamingResponse
 
+from ice.trace import TRACE_TERMINATOR
 from ice.trace import traces_dir
 
 router = APIRouter(prefix="/api/traces", tags=["traces"])
@@ -31,7 +32,9 @@ async def list_traces():
 
 @router.get("/{trace_id}/streamed/trace.jsonl")
 async def get_streamed_trace(trace_id: str):
-    return get_streamed_file(traces_dir / trace_id / "trace.jsonl")
+    return get_streamed_file(
+        traces_dir / trace_id / "trace.jsonl", terminator=TRACE_TERMINATOR
+    )
 
 
 @router.get("/{trace_id}/trace.jsonl")
@@ -93,7 +96,7 @@ async def get_lines_until_terminator(path: Path, terminator: str = "END_OF_TRACE
                 yield line
 
 
-def get_streamed_file(path: Path, terminator: str = "END_OF_TRACE"):
+def get_streamed_file(path: Path, terminator: str):
     # TODO we have to make sure we write the terminator to the file
     # when we're done writing to it (although the current code happens
     # to do this already)

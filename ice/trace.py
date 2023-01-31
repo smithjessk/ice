@@ -43,6 +43,7 @@ parent_id_var: ContextVar[str] = ContextVar("id")
 
 traces_dir = OUGHT_ICE_DIR / "traces"
 traces_dir.mkdir(parents=True, exist_ok=True)
+TRACE_TERMINATOR = "END_OF_TRACE"
 
 
 class Trace:
@@ -166,6 +167,12 @@ def emit_block(x) -> tuple[int, int]:
         return trc.add_to_block(x)
     else:
         return 0, 0
+
+
+def write_end_of_trace():
+    if trc := trace_var.get():
+        trc.file.write(TRACE_TERMINATOR)
+        trc.file.close()  # TODO close or flush?
 
 
 Scalar = Union[bool, int, float, str, None]
