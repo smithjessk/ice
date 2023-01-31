@@ -177,6 +177,79 @@ const TreeProvider = ({ traceId, children }: { traceId: string; children: ReactN
   useEffect(() => {
     let timeoutId: ReturnType<typeof setTimeout>;
 
+    // TODO: Replace with .pipeThrough(new TextDecoderStream()) once browsers support them,
+    // and once ReadableStream is async-iterable.
+    async function* textFromStream(stream: ReadableStream<Uint8Array>) {
+      const decoder = new TextDecoder();
+      const reader = stream.getReader();
+      for (;;) {
+        const { value } = await reader.read();
+        if (!value) {
+          break;
+        }
+        yield decoder.decode(value, { stream: true });
+      }
+      yield decoder.decode();
+    }
+
+    const dispatchResponses = async (
+      chunks: AsyncIterable<string>,
+      dispatch: (response: unknown) => void,
+    ) => {
+      const maybeDispatch = (line: string) => {
+        if (line.trim()) {
+          dispatch(JSON.parse(line));
+        }
+      };
+
+      let remainder = "";
+      for await (const chunk of chunks) {
+        const lines = (remainder + chunk).split("\n");
+        remainder = lines.pop() ?? "";
+        lines.forEach(maybeDispatch);
+      }
+      maybeDispatch(remainder);
+    };
+
+    const makeStream = async () => {
+      const streamURL = `${urlPrefix(traceId)}/streamed/trace.jsonl`;
+      const res = await fetch(streamURL);
+      if (!res.ok) {
+        throw new Error(`Unexpected status: ${res.status}`);
+      }
+      const stream = res.body;
+      if (!stream) {
+        throw new Error("No stream");
+      }
+      // TODO check the status- the previous code checked for 206
+      // TODO do we need         if (!isMounted.current) return;
+      // TODO wrap this in a try/catch
+      // TODO do we need to check for isMounted.current and then set a timeout
+      const chunks = textFromStream(stream);
+      await dispatchResponses(chunks, (response: unknown) => {
+        console.log("response", response);
+        // TODO make sure we have the same logic as the old code
+        // TODO what was [setCalls]? (what is the state used for?)
+        // TODO note down what we're currently passing into each call to applyUpdates and compare that to what we were previously passing in
+        setCalls(calls =>
+          produce(calls, draft => {
+            // TODO streaming at the level of a line might not be correct/easiest
+            // TODO is this the idiomatic way to do this?
+            const casted: Record<string, unknown> = response as Record<string, unknown>;
+            console.log("would be passing in casted", casted, "to applyUpdates");
+            applyUpdates(draft, casted);
+          }),
+        );
+      });
+    };
+
+    // TODO remove this but the nice trace id for debugging is http://localhost:8935/traces/01GR4S5160AW5BDK9F04202GXW :)
+
+    const myPrint = (s: string) => {
+      console.log("canonical", s);
+      return true;
+    };
+
     const poll = async () => {
       let delay = 1_000;
       try {
@@ -208,7 +281,7 @@ const TreeProvider = ({ traceId, children }: { traceId: string; children: ReactN
             text
               .slice(0, end)
               .split("\n")
-              .forEach(line => line && applyUpdates(draft, JSON.parse(line)));
+              .forEach(line => line && myPrint(JSON.parse(line))); // && applyUpdates(draft, JSON.parse(line)));
           }),
         );
       } catch (e) {
@@ -220,8 +293,8 @@ const TreeProvider = ({ traceId, children }: { traceId: string; children: ReactN
       }
     };
 
+    makeStream();
     poll();
-
     return () => {
       // TODO do this with an effect that aborts the request if the page is navigated away from
       // fetch API, signal; abort controller (https://developers.google.com/web/updates/2017/09/abortable-fetch)
