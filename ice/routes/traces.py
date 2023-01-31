@@ -1,6 +1,8 @@
 from pathlib import Path
 from typing import Optional
 
+import anyio
+
 from fastapi import APIRouter
 from fastapi import Header
 from fastapi import HTTPException
@@ -72,7 +74,7 @@ def get_file(path: Path, Range: Optional[str]):
 # TODO what's the relationship b/w traces and blocks?
 
 
-def get_lines_until_terminator(path: Path, terminator: str = "END_OF_TRACE"):
+async def get_lines_until_terminator(path: Path, terminator: str = "END_OF_TRACE"):
     """Return the lines in the file until we see the terminator.
 
     The terminator is not included in the result.
@@ -81,12 +83,14 @@ def get_lines_until_terminator(path: Path, terminator: str = "END_OF_TRACE"):
     if not path.exists():
         raise HTTPException(status_code=404, detail="File not found")
 
-    # read the path line by line and stop when we see the terminator
-    with open(path, "r") as f:
-        for line in f:
+    async with await anyio.open_file(path, "r") as f:
+        has_seen_terminator = False
+        while not has_seen_terminator:
+            line = await f.readline()
             if line.strip() == terminator:
-                break
-            yield line
+                has_seen_terminator = True
+            else:
+                yield line
 
 
 def get_streamed_file(path: Path, terminator: str = "END_OF_TRACE"):
@@ -94,8 +98,6 @@ def get_streamed_file(path: Path, terminator: str = "END_OF_TRACE"):
     # when we're done writing to it (although the current code happens
     # to do this already)
     # TODO test what happens if the file doesn't exist
-    # TODO should we support Range headers here?
-    # read the path line by line and stop when we see the terminator
     return StreamingResponse(
         get_lines_until_terminator(path, terminator), media_type="application/json"
     )

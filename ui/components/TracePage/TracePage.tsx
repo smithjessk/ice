@@ -146,6 +146,41 @@ const urlPrefix = (traceId: string) => {
   return `${base}/traces/${traceId}`;
 };
 
+// TODO: Replace with .pipeThrough(new TextDecoderStream()) once browsers support them,
+// and once ReadableStream is async-iterable.
+async function* textFromStream(stream: ReadableStream<Uint8Array>) {
+  const decoder = new TextDecoder();
+  const reader = stream.getReader();
+  for (;;) {
+    const { value } = await reader.read();
+    if (!value) {
+      break;
+    }
+    yield decoder.decode(value, { stream: true });
+  }
+  yield decoder.decode();
+}
+
+// TODO understand this code
+const dispatchResponses = async (
+  chunks: AsyncIterable<string>,
+  dispatch: (response: unknown) => void,
+) => {
+  const maybeDispatch = (line: string) => {
+    if (line.trim()) {
+      dispatch(JSON.parse(line));
+    }
+  };
+
+  let remainder = "";
+  for await (const chunk of chunks) {
+    const lines = (remainder + chunk).split("\n");
+    remainder = lines.pop() ?? "";
+    lines.forEach(maybeDispatch);
+  }
+  maybeDispatch(remainder);
+};
+
 const TreeProvider = ({ traceId, children }: { traceId: string; children: ReactNode }) => {
   const [calls, setCalls] = useState<Calls>({});
   const [blocks, setBlocks] = useState<Blocks>({});
@@ -173,89 +208,52 @@ const TreeProvider = ({ traceId, children }: { traceId: string; children: ReactN
 
   const isMounted = useRef(true);
 
+  // i think this should be a ref, not state, because it's not a value that should trigger a re-render
+  const previousRequestsAbortController = useRef<AbortController>();
+
   useEffect(() => {
-    let timeoutId: ReturnType<typeof setTimeout>;
-
-    // TODO: Replace with .pipeThrough(new TextDecoderStream()) once browsers support them,
-    // and once ReadableStream is async-iterable.
-    async function* textFromStream(stream: ReadableStream<Uint8Array>) {
-      const decoder = new TextDecoder();
-      const reader = stream.getReader();
-      for (;;) {
-        const { value } = await reader.read();
-        if (!value) {
-          break;
-        }
-        yield decoder.decode(value, { stream: true });
-      }
-      yield decoder.decode();
+    if (previousRequestsAbortController.current) {
+      previousRequestsAbortController.current.abort();
     }
+    previousRequestsAbortController.current = new AbortController();
+    const controller = previousRequestsAbortController.current;
 
-    const dispatchResponses = async (
-      chunks: AsyncIterable<string>,
-      dispatch: (response: unknown) => void,
-    ) => {
-      const maybeDispatch = (line: string) => {
-        if (line.trim()) {
-          dispatch(JSON.parse(line));
-        }
-      };
-
-      let remainder = "";
-      for await (const chunk of chunks) {
-        const lines = (remainder + chunk).split("\n");
-        remainder = lines.pop() ?? "";
-        lines.forEach(maybeDispatch);
-      }
-      maybeDispatch(remainder);
-    };
+    let timeoutId: ReturnType<typeof setTimeout>; // TODO do we need this
 
     const makeStream = async () => {
-      const streamURL = `${urlPrefix(traceId)}/streamed/trace.jsonl`;
-      const res = await fetch(streamURL);
-      if (!res.ok) {
-        throw new Error(`Unexpected status: ${res.status}`);
+      try {
+        const streamURL = `${urlPrefix(traceId)}/streamed/trace.jsonl`;
+        const res = await fetch(streamURL, { signal: controller.signal });
+        if (!res.ok) {
+          throw new Error(`Unexpected status: ${res.status}`);
+        }
+        const stream = res.body;
+        if (!stream) {
+          throw new Error("No stream");
+        }
+        // TODO check the status- the previous code checked for 206 (should we?)
+        const chunks = textFromStream(stream);
+        await dispatchResponses(chunks, (response: unknown) => {
+          setCalls(calls =>
+            // `produce` is a function from `immer`. It makes it simpler to update
+            // states.
+            produce(calls, draft => {
+              const r: Record<string, unknown> = response as Record<string, unknown>;
+              applyUpdates(draft, r);
+            }),
+          );
+        });
+      } catch (e) {
+        // TODO abort errors are expected, yet they are logged as errors
+        console.error("Error streaming trace", e);
       }
-      const stream = res.body;
-      if (!stream) {
-        throw new Error("No stream");
-      }
-      // TODO check the status- the previous code checked for 206
-      // TODO do we need         if (!isMounted.current) return;
-      // TODO wrap this in a try/catch
-      // TODO do we need to check for isMounted.current and then set a timeout
-      const chunks = textFromStream(stream);
-      await dispatchResponses(chunks, (response: unknown) => {
-        console.log("response", response);
-        // TODO make sure we have the same logic as the old code
-        // TODO what was [setCalls]? (what is the state used for?)
-        // TODO note down what we're currently passing into each call to applyUpdates and compare that to what we were previously passing in
-        setCalls(calls =>
-          produce(calls, draft => {
-            // TODO streaming at the level of a line might not be correct/easiest
-            // TODO is this the idiomatic way to do this?
-            const casted: Record<string, unknown> = response as Record<string, unknown>;
-            console.log("would be passing in casted", casted, "to applyUpdates");
-            applyUpdates(draft, casted);
-          }),
-        );
-      });
     };
 
     // TODO remove this but the nice trace id for debugging is http://localhost:8935/traces/01GR4S5160AW5BDK9F04202GXW :)
 
     makeStream();
     return () => {
-      // TODO do this with an effect that aborts the request if the page is navigated away from
-      // fetch API, signal; abort controller (https://developers.google.com/web/updates/2017/09/abortable-fetch)
-      // should also make this into a streaming response
-      // three things:
-      // 1. change the server to use streaming, looking for a terminator(there's already a terminator inside the block files, just not in the trace jsonl files)
-      // 2. fetch abort controller in the frontend (takes in a line of jsonL)
-      // (you need to have capabilities on the frontend to abort the fetch because the tcp connection could still be open)
-      // check out https://github.com/oughtinc/ice/pull/150
-      // 3. use part 2 inside a useEffect that returns a cleanup function that aborts the fetch (setState or reference)
-
+      // TODO check out https://github.com/oughtinc/ice/pull/150
       isMounted.current = false; // TODO this gets hit when doing a hot reload, which is a bit annoying (stops the streaming from working)
       clearTimeout(timeoutId);
     };
