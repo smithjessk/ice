@@ -147,7 +147,6 @@ const urlPrefix = (traceId: string) => {
 };
 
 const TreeProvider = ({ traceId, children }: { traceId: string; children: ReactNode }) => {
-  const traceOffsetRef = useRef(0);
   const [calls, setCalls] = useState<Calls>({});
   const [blocks, setBlocks] = useState<Blocks>({});
   const [selectedId, setSelectedId] = useState<string>();
@@ -245,56 +244,7 @@ const TreeProvider = ({ traceId, children }: { traceId: string; children: ReactN
 
     // TODO remove this but the nice trace id for debugging is http://localhost:8935/traces/01GR4S5160AW5BDK9F04202GXW :)
 
-    const myPrint = (s: string) => {
-      console.log("canonical", s);
-      return true;
-    };
-
-    const poll = async () => {
-      let delay = 1_000;
-      try {
-        const url = `${urlPrefix(traceId)}/trace.jsonl`;
-        const offset = traceOffsetRef.current;
-        const contentLength = await getContentLength(url);
-        if (offset >= contentLength) return;
-
-        const initialOffset = 1e6;
-        const subsequentOffset = 1e9;
-        const limit = Math.min(
-          offset + (offset === 0 ? initialOffset : subsequentOffset),
-          contentLength,
-        );
-        if (limit < contentLength) delay = 50;
-
-        const response = await fetch(url, {
-          headers: { Range: `bytes=${offset}-${limit}` },
-        });
-        const { status } = response;
-        if (status !== 206) throw new Error(`Unexpected status: ${status}`);
-        const text = await response.text();
-        if (!isMounted.current) return;
-
-        const end = text.lastIndexOf("\n") + 1;
-        traceOffsetRef.current += end;
-        setCalls(calls =>
-          produce(calls, draft => {
-            text
-              .slice(0, end)
-              .split("\n")
-              .forEach(line => line && myPrint(JSON.parse(line))); // && applyUpdates(draft, JSON.parse(line)));
-          }),
-        );
-      } catch (e) {
-        console.warn("fetch failed", e);
-      } finally {
-        if (isMounted.current) {
-          timeoutId = setTimeout(poll, delay);
-        }
-      }
-    };
-
     makeStream();
-    poll();
     return () => {
       // TODO do this with an effect that aborts the request if the page is navigated away from
       // fetch API, signal; abort controller (https://developers.google.com/web/updates/2017/09/abortable-fetch)
