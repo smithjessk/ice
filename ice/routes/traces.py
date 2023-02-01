@@ -74,9 +74,6 @@ def get_file(path: Path, Range: Optional[str]):
         return PlainTextResponse(text, status_code=206)
 
 
-# TODO what's the relationship b/w traces and blocks?
-
-
 async def get_lines_until_terminator(path: Path, terminator: str = "END_OF_TRACE"):
     """Return the lines in the file until we see the terminator.
 
@@ -97,9 +94,6 @@ async def get_lines_until_terminator(path: Path, terminator: str = "END_OF_TRACE
 
 
 def get_streamed_file(path: Path, terminator: str):
-    # TODO we have to make sure we write the terminator to the file
-    # when we're done writing to it (although the current code happens
-    # to do this already)
     # TODO test what happens if the file doesn't exist
     return StreamingResponse(
         get_lines_until_terminator(path, terminator), media_type="application/json"

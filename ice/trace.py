@@ -1,3 +1,4 @@
+import contextlib
 import hashlib
 import json
 import threading
@@ -145,13 +146,22 @@ class Trace:
         return address
 
 
-# TODO document more how this file format writes
-
 trace_var: ContextVar[Optional[Trace]] = ContextVar("trace", default=None)
 
 
+# TODO do the traces look different now?  compare w/ main after rm, rf ing
+
+
+@contextlib.contextmanager
 def enable_trace():
-    trace_var.set(Trace())
+    """This is a context manager to make sure that traces are properly closed."""
+    # TODO someday consider extending this idea to make functions (e.g. `trace`)
+    # methods on a context manager
+    try:
+        trace_var.set(Trace())
+        yield
+    finally:
+        _write_end_of_trace()
 
 
 def trace_enabled():
@@ -171,10 +181,9 @@ def emit_block(x) -> tuple[int, int]:
         return 0, 0
 
 
-def write_end_of_trace():
+def _write_end_of_trace():
     if trc := trace_var.get():
         trc.file.write(TRACE_TERMINATOR)
-        # trc.file.close()  # TODO close or flush?
         trc.file.close()
 
 
@@ -229,9 +238,6 @@ def trace(fn):
     if isclass(fn):
         for key, value in fn.__dict__.items():
             if isfunction(value):
-                # TODO so calling `trace(value)` a bunch of times
-                # causes [end_of_trace] to be written multiple times.
-                # This is a problem. How can we fix it?
                 setattr(fn, key, trace(value))
         return fn
 

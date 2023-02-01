@@ -20,7 +20,6 @@ from ice.recipe import is_list_of_recipe_result
 from ice.recipe import Recipe
 from ice.trace import enable_trace
 from ice.trace import trace
-from ice.trace import write_end_of_trace
 from ice.utils import map_async
 
 log = get_logger()
@@ -48,26 +47,31 @@ def main_cli(
     :param input_files:  List of files to run recipe over.
     :param gold_standard_splits: "iterate", "validation", and/or "test"
     """
+
+    def inner():
+        async def main_wrapper():
+            # A traced function cannot be called until the event loop is running.
+            return await main(
+                mode=mode,
+                output_file=output_file,
+                json_out=json_out,
+                recipe_name=recipe_name,
+                input_files=input_files,
+                gold_standard_splits=gold_standard_splits,
+                question_short_name=question_short_name,
+                args=args or {},
+            )
+
+        asyncio.run(main_wrapper())
+
     if trace:
-        enable_trace()
+        with enable_trace():
+            inner()
+    else:
+        inner()
 
-    async def main_wrapper():
-        # A traced function cannot be called until the event loop is running.
-        return await main(
-            mode=mode,
-            output_file=output_file,
-            json_out=json_out,
-            recipe_name=recipe_name,
-            input_files=input_files,
-            gold_standard_splits=gold_standard_splits,
-            question_short_name=question_short_name,
-            args=args or {},
-        )
-
-    asyncio.run(main_wrapper())
-
-    if trace:
-        write_end_of_trace()
+    # if trace:
+    #     write_end_of_trace() this is a good one, return it if my current approach doesn't work
 
 
 @trace
