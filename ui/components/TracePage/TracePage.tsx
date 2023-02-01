@@ -127,6 +127,8 @@ const applyUpdates = (calls: Calls, updates: Record<string, unknown>) =>
     set(calls, path, value);
 
     const id = path.split(".")[0];
+    console.log("id", JSON.stringify(id));
+    console.log("calls", calls);
     calls[id].id = id;
 
     if (path.endsWith(".fields.davinci_equivalent_tokens")) {
@@ -206,7 +208,7 @@ const TreeProvider = ({ traceId, children }: { traceId: string; children: ReactN
     }
   }, [autoselected, calls, traceId]);
 
-  const isMounted = useRef(true);
+  // const isMounted = useRef(true);
 
   // i think this should be a ref, not state, because it's not a value that should trigger a re-render
   const previousRequestsAbortController = useRef<AbortController>();
@@ -217,8 +219,9 @@ const TreeProvider = ({ traceId, children }: { traceId: string; children: ReactN
     }
     previousRequestsAbortController.current = new AbortController();
     const controller = previousRequestsAbortController.current;
+    setCalls({});
 
-    let timeoutId: ReturnType<typeof setTimeout>; // TODO do we need this
+    // let timeoutId: ReturnType<typeof setTimeout>; // TODO do we need this
 
     const makeStream = async () => {
       try {
@@ -233,6 +236,10 @@ const TreeProvider = ({ traceId, children }: { traceId: string; children: ReactN
         }
         // TODO check the status- the previous code checked for 206 (should we?)
         const chunks = textFromStream(stream);
+        if (controller.signal.aborted) {
+          return;
+        }
+
         await dispatchResponses(chunks, (response: unknown) => {
           setCalls(calls =>
             // `produce` is a function from `immer`. It makes it simpler to update
@@ -245,17 +252,15 @@ const TreeProvider = ({ traceId, children }: { traceId: string; children: ReactN
         });
       } catch (e) {
         // TODO abort errors are expected, yet they are logged as errors
-        console.error("Error streaming trace", e);
+        console.error("Error streaming trace", e, "traceId", traceId);
       }
     };
 
     makeStream();
     return () => {
-      // TODO check out https://github.com/oughtinc/ice/pull/150
       // TODO i think we can take all this out- does it all still work properly with timeouts? can test on a file in the old format
-      // TODO how to make this work without a breaking change to the file format
-      isMounted.current = false; // TODO this gets hit when doing a hot reload, which is a bit annoying (stops the streaming from working)
-      clearTimeout(timeoutId);
+      //isMounted.current = false; // TODO this gets hit when doing a hot reload, which is a bit annoying (stops the streaming from working)
+      // clearTimeout(timeoutId);
     };
   }, [traceId]);
 
@@ -301,10 +306,22 @@ const TreeProvider = ({ traceId, children }: { traceId: string; children: ReactN
     const fetchBlock = async (start: number) => {
       // Note that the 999999999 is needed because our get_file implementation
       // requires both ends of the range to be specified.
-      const response = await fetch(url, { headers: { Range: `bytes=${start}-999999999` } });
+      const controller = previousRequestsAbortController.current;
+      // TODO does loading something in the old trace format cause the server to crash?
+      // TODO this is separate from the bug that causes the localhost:5173 homepage to link to incorrect traces, right?
+      // TODO does npm run dev now auto reload the right things?
+      let options = { headers: { Range: `bytes=${start}-999999999` } } as RequestInit;
+      //if (controller) {
+      //  options = { ...options, signal: controller.signal };
+      //}
+      const response = await fetch(url, options);
       const text = await response.text();
 
-      if (!isMounted.current) return;
+      /*if (controller && controller.signal.aborted) {
+        return;
+      }*/
+
+      // if (!isMounted.current) return;
 
       start += text.length;
       const lines = text.split("\n");
