@@ -20,8 +20,8 @@ from ice.recipe import is_list_of_recipe_result
 from ice.recipe import Recipe
 from ice.trace import enable_trace
 from ice.trace import trace
+from ice.trace import write_end_of_trace
 from ice.utils import map_async
-
 
 log = get_logger()
 
@@ -65,6 +65,9 @@ def main_cli(
         )
 
     asyncio.run(main_wrapper())
+
+    if trace:
+        write_end_of_trace()
 
 
 @trace

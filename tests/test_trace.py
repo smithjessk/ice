@@ -28,6 +28,8 @@ async def test_trace_blocks():
     assert trace.emit_block(long) == (0, 2)
     assert trace.emit_block("quux") == (1, 1)
 
+    trace.write_end_of_trace()
+
     assert (
         current_trace.dir / "block_0.jsonl"
     ).read_text() == f'"foo"\n"bar"\n"{long}"\nend\n'

@@ -174,7 +174,8 @@ def emit_block(x) -> tuple[int, int]:
 def write_end_of_trace():
     if trc := trace_var.get():
         trc.file.write(TRACE_TERMINATOR)
-        trc.file.close()  # TODO close or flush?
+        # trc.file.close()  # TODO close or flush?
+        trc.file.close()
 
 
 Scalar = Union[bool, int, float, str, None]
@@ -228,6 +229,9 @@ def trace(fn):
     if isclass(fn):
         for key, value in fn.__dict__.items():
             if isfunction(value):
+                # TODO so calling `trace(value)` a bunch of times
+                # causes [end_of_trace] to be written multiple times.
+                # This is a problem. How can we fix it?
                 setattr(fn, key, trace(value))
         return fn
 
@@ -293,7 +297,9 @@ def trace(fn):
             )
             return result
 
-        return await create_task(inner_wrapper(*args, **kwargs))
+        result = await create_task(inner_wrapper(*args, **kwargs))
+        # write_end_of_trace()
+        return result
 
     return wrapper
 
