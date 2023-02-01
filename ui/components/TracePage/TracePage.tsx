@@ -252,6 +252,8 @@ const TreeProvider = ({ traceId, children }: { traceId: string; children: ReactN
     makeStream();
     return () => {
       // TODO check out https://github.com/oughtinc/ice/pull/150
+      // TODO i think we can take all this out- does it all still work properly with timeouts? can test on a file in the old format
+      // TODO how to make this work without a breaking change to the file format
       isMounted.current = false; // TODO this gets hit when doing a hot reload, which is a bit annoying (stops the streaming from working)
       clearTimeout(timeoutId);
     };

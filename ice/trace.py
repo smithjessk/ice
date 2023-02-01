@@ -145,6 +145,8 @@ class Trace:
         return address
 
 
+# TODO document more how this file format writes
+
 trace_var: ContextVar[Optional[Trace]] = ContextVar("trace", default=None)
 
 
